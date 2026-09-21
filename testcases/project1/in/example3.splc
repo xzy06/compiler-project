@@ -1,0 +1,47 @@
+int
+integer
+int_value
+_int
+_int123
+
+0
+1
+10
+01234
+000
+00123
+
+=
+<=
+<
+>=
+>
+==
+!=
+!
+&&
+||
++
+-
+*
+/
+%
+^
+.
+
+int/* comment */value
+0/* comment */123
+
+// comment
+/* block comment */
+
+a
+Z
+_
+a1
+A123
+_a
+a_
+__abc__
+abc123
+123abc
