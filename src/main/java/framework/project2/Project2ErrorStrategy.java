@@ -2,6 +2,8 @@ package framework.project2;
 
 import org.antlr.v4.runtime.DefaultErrorStrategy;
 import org.antlr.v4.runtime.Parser;
+import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.misc.IntervalSet;
 
 /**
  * Project 2 TODO.
@@ -37,6 +39,21 @@ public final class Project2ErrorStrategy extends DefaultErrorStrategy {
          * 1. which token is missing;
          * 2. which line should be reported.
          */
+
+        // 获取当前尚未消费的 Lookahead Token
+        Token currentToken = recognizer.getCurrentToken();
+
+        // 获取 Parser 当前期望的 Token 集合
+        IntervalSet expecting = getExpectedTokens(recognizer);
+
+        // 获取缺失的 Token 类型
+        int tokenType = expecting.getMinElement();
+
+        // 获取错误行号
+        int line = currentToken.getLine() - 1;
+
+        // 报告错误
+        reporter.reportMissing(tokenType, line);
     }
 
     @Override
@@ -55,5 +72,13 @@ public final class Project2ErrorStrategy extends DefaultErrorStrategy {
          * 1. which token is extraneous;
          * 2. which line should be reported.
          */
+
+        Token token = recognizer.getCurrentToken();
+
+        // 行号从 0 开始
+        int line = token.getLine() - 1;
+
+        // 报告多余 Token
+        reporter.reportExtraneous(token.getType(), line);
     }
 }

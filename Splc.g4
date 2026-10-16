@@ -97,6 +97,10 @@ functionDef
  */
 parameterList
     : parameter (COMMA parameter)*
+    | parameter parameter
+      {
+          reportMissing(COMMA, currentLine());
+      }
     ;
 
 parameter
