@@ -145,14 +145,24 @@ expressionStatement
 
 /* ==================== Expression ==================== */
 
-/*
- * TODO:
- * Complete the expression rule according to the Project 2 specification.
- *
- * The temporary Number-only rule keeps the starter grammar compilable.
- */
+// Direct left recursion: earlier recursive alternatives bind more tightly.
+// POW binds more tightly than prefix operators; POW and ASSIGN associate right.
 expression
-    : Number
+    : Identifier LPAREN argumentList? RPAREN
+    | expression LBRACK expression RBRACK
+    | expression DOT Identifier
+    | <assoc=right> expression POW expression
+    | (PLUS | MINUS | NOT) expression
+    | expression (STAR | DIV | MOD) expression
+    | expression (PLUS | MINUS) expression
+    | expression (LT | LE | GT | GE) expression
+    | expression (EQ | NEQ) expression
+    | expression AND expression
+    | expression OR expression
+    | <assoc=right> expression ASSIGN expression
+    | LPAREN expression RPAREN
+    | Number
+    | Identifier
     ;
 
 argumentList
