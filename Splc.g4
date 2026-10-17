@@ -96,11 +96,15 @@ functionDef
  * generic recovery strategy alone.  Extend this rule according to the spec.
  */
 parameterList
-    : parameter (COMMA parameter)*
-    | parameter parameter
-      {
-          reportMissing(COMMA, currentLine());
-      }
+    : parameter
+      (
+          COMMA parameter
+        |
+          {
+              reportMissing(COMMA, currentLine());
+          }
+          parameter
+      )*
     ;
 
 parameter
