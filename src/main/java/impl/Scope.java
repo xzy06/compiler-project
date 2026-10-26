@@ -37,6 +37,11 @@ public class Scope {
         //TODO:
         //If the current scope does not contain Variable, create one and add it to the current Scope;
         // otherwise, return null.
+        if (!variables.containsKey(name)) {
+            VariableSymbol variableSymbol = new VariableSymbol(name, type);
+            variables.put(name, variableSymbol);
+            return variableSymbol;
+        }
         return null;
     }
 
@@ -45,6 +50,11 @@ public class Scope {
         // TODO：
         // If the current scope does not contain a Function, create one and add it to the current Scope;
         // otherwise, return null
+        if (!functions.containsKey(name)) {
+            FunctionSymbol functionSymbol = new FunctionSymbol(name, returnType, params);
+            functions.put(name, functionSymbol);
+            return functionSymbol;
+        }
         return null;
     }
 
@@ -53,6 +63,11 @@ public class Scope {
         //Find name in the current scope; if it exists, return the corresponding VariableSymbol.
         // If it does not exist, search in the parent scope
         // If it cannot be found, return null.
+        if (variables.containsKey(name)) {
+            return variables.get(name);
+        } else if (parent != null) {
+            return parent.lookupVariable(name);
+        }
         return null;
     }
 
@@ -65,6 +80,11 @@ public class Scope {
         //Find name in the current scope; if it exists, return the corresponding FunctionSymbol.
         // If it does not exist, search in the parent scope
         // If it cannot be found, return null.
+        if (functions.containsKey(name)) {
+            return functions.get(name);
+        } else if (parent != null) {
+            return parent.lookupFunction(name);
+        }
         return null;
     }
 }
