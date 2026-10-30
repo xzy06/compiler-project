@@ -1,7 +1,7 @@
 {
     "java.project.sourcePaths": [
         "src/main/java",
-        "target/generated"
+        "target"
     ],
     "java.project.referencedLibraries": [
         "libs/**/*.jar"
