@@ -17,7 +17,7 @@ public class Main {
     public static void main(String[] args) {
         CharStream input = null;
         try {
-            input = CharStreams.fromFileName("testcases/semantic1/base1.splc");
+            input = CharStreams.fromFileName("testcases/semantic1/base2.splc");
             SplcLexer lexer = new SplcLexer(input);
             CommonTokenStream tokens = new CommonTokenStream(lexer);
             SplcParser parser = new SplcParser(tokens);
