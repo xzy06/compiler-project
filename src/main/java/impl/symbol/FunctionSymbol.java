@@ -35,10 +35,9 @@ public final class FunctionSymbol extends Scope implements Symbol {
     // TODO: insert a parameter into THIS function scope, then append it to
     // the ordered parameter list. Duplicate parameter => false.
     public boolean addParameter(VariableSymbol parameter) {
-        if (parameters.contains(parameter)) {
+        if (!define(parameter)) {
             return false;
         }
-        define(parameter);
         parameters.add(parameter);
         return true;
     }
