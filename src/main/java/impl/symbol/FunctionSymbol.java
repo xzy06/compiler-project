@@ -22,8 +22,12 @@ public final class FunctionSymbol extends Scope implements Symbol {
         return Collections.unmodifiableList(parameters);
     }
 
-    // TODO: define in this function scope, then append to the ordered list.
+    // define in this function scope, then append to the ordered list.
     public boolean addParameter(VariableSymbol parameter) {
-        throw new UnsupportedOperationException("TODO: FunctionSymbol.addParameter");
+        if (!define(parameter)) {
+            return false;
+        }
+        parameters.add(parameter);
+        return true;
     }
 }

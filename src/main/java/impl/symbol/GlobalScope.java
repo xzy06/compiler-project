@@ -13,13 +13,18 @@ public final class GlobalScope extends Scope {
         return Collections.unmodifiableCollection(structTypes.values());
     }
 
-    // TODO: register a completed struct type; reject a duplicate name.
+    // register a completed struct type; reject a duplicate name.
     public boolean defineStruct(StructType type) {
-        throw new UnsupportedOperationException("TODO: GlobalScope.defineStruct");
+        String name = type.getName();
+        if (structTypes.containsKey(name)) {
+            return false;
+        }
+        structTypes.put(name, type);
+        return true;
     }
 
-    // TODO: search only the global struct-type table.
+    // search only the global struct-type table.
     public StructType resolveStruct(String name) {
-        throw new UnsupportedOperationException("TODO: GlobalScope.resolveStruct");
+        return structTypes.get(name);
     }
 }

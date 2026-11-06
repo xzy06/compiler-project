@@ -12,14 +12,18 @@ public final class StructType implements Type {
     public StructType(String name) { this.name = name; }
     public String getName() { return name; }
 
-    // TODO: reject duplicate member names and preserve declaration order.
+    // reject duplicate member names and preserve declaration order.
     public boolean defineMember(VariableSymbol member) {
-        throw new UnsupportedOperationException("TODO: StructType.defineMember");
+        if (members.containsKey(member.getName())) {
+            return false;
+        }
+        members.put(member.getName(), member);
+        return true;
     }
 
-    // TODO: search only this struct's member table.
+    // search only this struct's member table.
     public VariableSymbol resolveMember(String name) {
-        throw new UnsupportedOperationException("TODO: StructType.resolveMember");
+        return members.get(name);
     }
 
     public Collection<VariableSymbol> getMembers() {

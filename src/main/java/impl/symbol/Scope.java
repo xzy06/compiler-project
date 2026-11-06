@@ -14,18 +14,29 @@ public class Scope {
         return Collections.unmodifiableCollection(symbols.values());
     }
 
-    // TODO: check only this scope; shadowing in child scopes is allowed.
+    // check only this scope; shadowing in child scopes is allowed.
     public boolean define(Symbol symbol) {
-        throw new UnsupportedOperationException("TODO: Scope.define");
+        String name = symbol.getName();
+        if (symbols.containsKey(name)) {
+            return false;
+        }
+        symbols.put(name, symbol);
+        return true;
     }
 
-    // TODO: look up only in this scope.
+    // look up only in this scope.
     public Symbol resolveLocal(String name) {
-        throw new UnsupportedOperationException("TODO: Scope.resolveLocal");
+        return symbols.get(name);
     }
 
-    // TODO: search this scope, then parent scopes.
+    // search this scope, then parent scopes.
     public Symbol resolve(String name) {
-        throw new UnsupportedOperationException("TODO: Scope.resolve");
+        for (Scope s = this; s != null; s = s.getParent()) {
+            Symbol sym = s.resolveLocal(name);
+            if (sym != null) {
+                return sym;
+            }
+        }
+        return null;
     }
 }
