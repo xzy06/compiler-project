@@ -5,14 +5,20 @@ import generated.SplcBaseVisitor;
 import impl.symbol.*;
 import impl.type.*;
 import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.tree.TerminalNode;
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
-// Project 3 declaration, scope, and name-resolution implementation.
-// Project 4 type checking remains to be implemented.
+// Resolve names and check types in source order.
 public final class SemanticAnalyzer extends SplcBaseVisitor<Void> {
     private final GlobalScope globalScope = new GlobalScope();
     private Scope currentScope = globalScope;
     private final ErrorReporter reporter;
+    private Type currentReturnType;
+    // Preserve argument positions when some declarations could not be registered.
+    private final Map<FunctionSymbol, List<Type>> incompleteSignatures = new IdentityHashMap<>();
     public SemanticAnalyzer(ErrorReporter reporter) { this.reporter = reporter; }
     public GlobalScope getGlobalScope() { return globalScope; }
 
@@ -66,37 +72,45 @@ public final class SemanticAnalyzer extends SplcBaseVisitor<Void> {
         defineVariable(ctx.variableDecl(), globalScope);
         return null;
     }
-    private void defineVariable(Splc.VariableDeclContext ctx, Scope scope) {
+    private Type defineVariable(Splc.VariableDeclContext ctx, Scope scope) {
         Type type = resolveDeclaredType(ctx);
-        if (type == null) return;
+        if (type == null) return null;
         Token name = ctx.Identifier().getSymbol();
         if (!scope.define(new VariableSymbol(name.getText(), type))) {
             reporter.redefinedSymbol(name);
         }
+        return type;
     }
     @Override public Void visitFunctionDef(Splc.FunctionDefContext ctx) {
         Type type = resolveType(ctx.type());
-        if (type == null) return null;
         Token name = ctx.Identifier().getSymbol();
         FunctionSymbol function = new FunctionSymbol(name.getText(), type, globalScope);
-        if (!globalScope.define(function)) reporter.redefinedSymbol(name);
+        if (type != null && !globalScope.define(function)) reporter.redefinedSymbol(name);
         Scope previous = currentScope;
+        Type previousReturnType = currentReturnType;
         currentScope = function;
+        currentReturnType = type;
         try {
             if (ctx.parameterList() != null) {
+                List<Type> slots = new ArrayList<>();
                 for (Splc.ParameterContext parameter : ctx.parameterList().parameter()) {
                     Splc.VariableDeclContext declaration = parameter.variableDecl();
                     Type parameterType = resolveDeclaredType(declaration);
+                    slots.add(parameterType);
                     if (parameterType == null) continue;
                     Token parameterName = declaration.Identifier().getSymbol();
                     if (!function.addParameter(new VariableSymbol(parameterName.getText(), parameterType))) {
                         reporter.redefinedSymbol(parameterName);
                     }
                 }
+                if (slots.size() != function.getParameters().size()) {
+                    incompleteSignatures.put(function, slots);
+                }
             }
             for (Splc.StatementContext statement : ctx.block().statement()) visit(statement);
         } finally {
             currentScope = previous;
+            currentReturnType = previousReturnType;
         }
         return null;
     }
@@ -110,134 +124,150 @@ public final class SemanticAnalyzer extends SplcBaseVisitor<Void> {
         return null;
     }
     @Override public Void visitLocalVarDef(Splc.LocalVarDefContext ctx) {
-        defineVariable(ctx.variableDecl(), currentScope);
-        // TODO (Project 4): check initializer compatibility; reject array initialization.
-        if (ctx.expression() != null) visit(ctx.expression());
+        Type declared = defineVariable(ctx.variableDecl(), currentScope);
+        if (ctx.expression() != null) {
+            Type initializer = checkExpression(ctx.expression()).type();
+            if (declared instanceof ArrayType) {
+                reporter.arrayInitializerNotSupported(ctx.variableDecl().Identifier().getSymbol());
+            } else if (declared != null && initializer != null && !sameType(declared, initializer)) {
+                reporter.typeMismatch(ctx.ASSIGN().getSymbol());
+            }
+        }
         return null;
     }
     @Override public Void visitReturnStatement(Splc.ReturnStatementContext ctx) {
-        // TODO (Project 4): check against the current function return type.
-        return visitChildren(ctx);
+        Type actual = checkExpression(ctx.expression()).type();
+        if (actual != null && currentReturnType != null && !sameType(currentReturnType, actual)) {
+            reporter.typeMismatch(ctx.RETURN().getSymbol());
+        }
+        return null;
     }
     @Override public Void visitIfStatement(Splc.IfStatementContext ctx) {
-        // TODO (Project 4): check the condition type.
-        return visitChildren(ctx);
+        checkCondition(ctx.expression(), ctx.IF().getSymbol());
+        for (Splc.BlockContext block : ctx.block()) visit(block);
+        return null;
     }
     @Override public Void visitWhileStatement(Splc.WhileStatementContext ctx) {
-        // TODO (Project 4): check the condition type.
-        return visitChildren(ctx);
+        checkCondition(ctx.expression(), ctx.WHILE().getSymbol());
+        visit(ctx.block());
+        return null;
+    }
+    private void checkCondition(Splc.ExpressionContext ctx, Token keyword) {
+        Type type = checkExpression(ctx).type();
+        if (type != null && type != PrimitiveType.INT) reporter.badConditionType(keyword);
     }
     @Override public Void visitExpression(Splc.ExpressionContext ctx) {
-        if (ctx.Identifier() != null && ctx.DOT() == null && ctx.LPAREN() == null) {
-            Token name = ctx.Identifier().getSymbol();
-            if (currentScope.resolve(name.getText()) == null) reporter.undeclaredIdentifier(name);
-        }
-
-        if (ctx.ASSIGN() != null) {
-            Token assign = ctx.ASSIGN().getSymbol();
-            Type leftType = checkAssignmentTarget(ctx.expression(0), assign);
-            Type rightType = expressionType(ctx.expression(1));
-            if (leftType != null && rightType != null && !sameType(leftType, rightType)) {
-                reporter.typeMismatch(assign);
-            }
-            return null;
-        }
-
-        return visitChildren(ctx);
-    }
-
-    private Type checkAssignmentTarget(Splc.ExpressionContext ctx, Token assignToken) {
-        Type type = lvalueType(ctx);
-        if (type == null) return null;
-        if (type instanceof ArrayType) {
-            reporter.invalidAssignmentTarget(assignToken);
-            return null;
-        }
-        return type;
-    }
-
-    private Type lvalueType(Splc.ExpressionContext ctx) {
-        if (ctx == null) return null;
-
-        // (e)
-        if (ctx.LPAREN() != null && ctx.Identifier() == null && ctx.DOT() == null && ctx.LBRACK() == null
-                && ctx.getChildCount() == 3) {
-            return lvalueType(ctx.expression(0));
-        }
-
-        // 普通变量
-        if (ctx.Identifier() != null && ctx.LPAREN() == null && ctx.DOT() == null) {
-            Token name = ctx.Identifier().getSymbol();
-            Symbol symbol = currentScope.resolve(name.getText());
-            if (symbol == null) { reporter.undeclaredIdentifier(name); return null; }
-            if (!(symbol instanceof VariableSymbol variable)) { reporter.notVariable(name); return null; }
-            return variable.getType();
-        }
-
-        // 数组元素 base[index]
-        if (ctx.LBRACK() != null) {
-            Token bracket = ctx.LBRACK().getSymbol();
-            Type base = lvalueType(ctx.expression(0));
-            Type index = expressionType(ctx.expression(1));
-            if (index != null && index != PrimitiveType.INT) reporter.badIndexType(bracket);
-            if (base == null) return null;
-            if (!(base instanceof ArrayType array)) { reporter.expectedArray(bracket); return null; }
-            return array.getElementType();
-        }
-
-        // 成员访问 base.name
-        if (ctx.DOT() != null) {
-            Token dot = ctx.DOT().getSymbol();
-            Token member = ctx.Identifier().getSymbol();
-            Type base = lvalueType(ctx.expression(0));
-            if (base == null) return null;
-            if (!(base instanceof StructType struct)) { reporter.expectedStruct(dot); return null; }
-            VariableSymbol field = struct.resolveMember(member.getText());
-            if (field == null) { reporter.unknownMember(member); return null; }
-            return field.getType();
-        }
-
-        // 其他不是左值
-        reporter.invalidAssignmentTarget(ctx.getStart());
+        checkExpression(ctx);
         return null;
     }
 
-    private Type expressionType(Splc.ExpressionContext ctx) {
-        if (ctx == null) return null;
-        if (ctx.Number() != null) return PrimitiveType.INT;
-        if (ctx.Identifier() != null && ctx.LPAREN() == null && ctx.DOT() == null) {
-            Symbol symbol = currentScope.resolve(ctx.Identifier().getText());
-            if (symbol instanceof VariableSymbol v) return v.getType();
-            return null;
-        }
-        if (ctx.LPAREN() != null && ctx.getChildCount() == 3) return expressionType(ctx.expression(0));
+    // A variable-backed array cannot be assigned as a whole, but indexing it
+    // can produce an assignment target.
+    private record ExprInfo(Type type, boolean variablePath) {}
+    private static final ExprInfo ERROR = new ExprInfo(null, false);
+    private static final ExprInfo INT_VALUE = new ExprInfo(PrimitiveType.INT, false);
+
+    private ExprInfo checkExpression(Splc.ExpressionContext ctx) {
+        if (ctx.Number() != null) return INT_VALUE;
         if (ctx.DOT() != null) {
-            Type base = expressionType(ctx.expression(0));
-            if (base instanceof StructType struct) {
-                VariableSymbol field = struct.resolveMember(ctx.Identifier().getText());
-                return field == null ? null : field.getType();
+            ExprInfo base = checkExpression(ctx.expression(0));
+            if (base.type() == null) return ERROR;
+            if (!(base.type() instanceof StructType struct)) {
+                reporter.expectedStruct(ctx.DOT().getSymbol());
+                return ERROR;
             }
-            return null;
+            Token name = ctx.Identifier().getSymbol();
+            VariableSymbol member = struct.resolveMember(name.getText());
+            if (member == null) {
+                reporter.unknownMember(name);
+                return ERROR;
+            }
+            return new ExprInfo(member.getType(), base.variablePath());
         }
         if (ctx.LBRACK() != null) {
-            Type base = expressionType(ctx.expression(0));
-            return base instanceof ArrayType array ? array.getElementType() : null;
+            ExprInfo base = checkExpression(ctx.expression(0));
+            Type index = checkExpression(ctx.expression(1)).type();
+            Token bracket = ctx.LBRACK().getSymbol();
+            if (base.type() != null && !(base.type() instanceof ArrayType)) reporter.expectedArray(bracket);
+            if (index != null && index != PrimitiveType.INT) reporter.badIndexType(bracket);
+            if (!(base.type() instanceof ArrayType array) || index != PrimitiveType.INT) return ERROR;
+            return new ExprInfo(array.getElementType(), base.variablePath());
         }
-        if (ctx.Identifier() != null && ctx.LPAREN() != null) {
-            Symbol symbol = currentScope.resolve(ctx.Identifier().getText());
-            return symbol instanceof FunctionSymbol f ? f.getType() : null;
+        if (ctx.Identifier() != null) {
+            Token name = ctx.Identifier().getSymbol();
+            Symbol symbol = currentScope.resolve(name.getText());
+            if (symbol == null) reporter.undeclaredIdentifier(name);
+            if (ctx.LPAREN() != null) return checkCall(ctx, name, symbol);
+            if (symbol instanceof VariableSymbol variable) return new ExprInfo(variable.getType(), true);
+            if (symbol != null) reporter.notVariable(name);
+            return ERROR;
         }
-        if (ctx.ASSIGN() != null) return expressionType(ctx.expression(0));
-        return PrimitiveType.INT;
+        if (ctx.LPAREN() != null) return checkExpression(ctx.expression(0));
+        if (ctx.ASSIGN() != null) return checkAssignment(ctx);
+
+        if (ctx.expression().size() == 1) {
+            Type operand = checkExpression(ctx.expression(0)).type();
+            if (operand == null) return ERROR;
+            if (operand == PrimitiveType.INT) return INT_VALUE;
+            reporter.badUnaryOperand(ctx.getStart());
+            return ERROR;
+        }
+        Type left = checkExpression(ctx.expression(0)).type();
+        Type right = checkExpression(ctx.expression(1)).type();
+        if (left == null || right == null) return ERROR;
+        if (left == PrimitiveType.INT && right == PrimitiveType.INT) return INT_VALUE;
+        reporter.badBinaryOperand(((TerminalNode) ctx.getChild(1)).getSymbol());
+        return ERROR;
+    }
+
+    private ExprInfo checkAssignment(Splc.ExpressionContext ctx) {
+        ExprInfo left = checkExpression(ctx.expression(0));
+        Token assign = ctx.ASSIGN().getSymbol();
+        boolean validTarget = left.variablePath() && !(left.type() instanceof ArrayType);
+        if (left.type() != null && !validTarget) reporter.invalidAssignmentTarget(assign);
+        Type right = checkExpression(ctx.expression(1)).type();
+        if (!validTarget || right == null) return ERROR;
+        if (!sameType(left.type(), right)) {
+            reporter.typeMismatch(assign);
+            return ERROR;
+        }
+        return new ExprInfo(left.type(), false);
+    }
+
+    private ExprInfo checkCall(Splc.ExpressionContext ctx, Token name, Symbol symbol) {
+        List<Splc.ExpressionContext> args = ctx.argumentList() == null
+                ? List.of() : ctx.argumentList().expression();
+        FunctionSymbol function = symbol instanceof FunctionSymbol f ? f : null;
+        if (symbol != null && function == null) reporter.notFunction(name);
+        List<Type> slots = function == null ? null : incompleteSignatures.get(function);
+        boolean matchingCount = function != null
+                && (slots == null ? function.getParameters().size() : slots.size()) == args.size();
+        if (function != null && !matchingCount) reporter.badArgumentCount(name);
+
+        boolean valid = matchingCount;
+        for (int i = 0; i < args.size(); i++) {
+            Splc.ExpressionContext arg = args.get(i);
+            Type actual = checkExpression(arg).type();
+            if (actual == null) {
+                valid = false;
+            } else if (matchingCount) {
+                Type expected = slots == null ? function.getParameters().get(i).getType() : slots.get(i);
+                if (expected == null) {
+                    valid = false;
+                } else if (!sameType(expected, actual)) {
+                    reporter.badArgumentType(arg.getStart());
+                    valid = false;
+                }
+            }
+        }
+        return valid ? new ExprInfo(function.getType(), false) : ERROR;
     }
 
     private boolean sameType(Type a, Type b) {
-        if (a == null || b == null) return false;
-        if (a == PrimitiveType.INT && b == PrimitiveType.INT) return true;
+        if (a == b) return true; // int and registered struct types have canonical objects.
         if (a instanceof ArrayType aa && b instanceof ArrayType ab) {
             return aa.getLength() == ab.getLength() && sameType(aa.getElementType(), ab.getElementType());
         }
-        if (a instanceof StructType && b instanceof StructType) return a == b;
         return false;
     }
 }
